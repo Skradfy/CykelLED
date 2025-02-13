@@ -1,0 +1,124 @@
+#include <Wire.h>                // I2C
+#include <Adafruit_GFX.h>        // Grafik bibliotek
+#include <Adafruit_SSD1306.h>    // OLED display bibliotek
+#include <Arduino.h>
+
+// .96 OLED display logik
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define SCREEN_ADDRESS 0x3C  // I2C addresse til .96 OLED display
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Joystick og LED logik
+#define LED_PIN 9
+#define JOY_BTN_PIN 2
+#define DEBOUNCE_DELAY 300
+#define BLINK_INTERVAL 500
+
+// LED states
+typedef enum {
+    OFF,
+    ON,
+    BLINKING
+} LightState;
+
+volatile LightState state = OFF;
+
+// debounce logik
+volatile bool buttonPressedFlag = false;
+unsigned long lastPressTime = 0;
+
+// blink logik
+unsigned long lastBlinkTime = 0;
+bool ledState = false;
+
+// kalder instanser af joystick og display
+void handleJoystickPress();  // ISR
+void updateDisplay();         // Update .96 OLED
+
+// setup er main loop
+void setup() {
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(JOY_BTN_PIN, INPUT_PULLUP);
+
+    // starter den serielle monitor
+    Serial.begin(9600);
+    delay(1000);
+
+    // Starter .96 OLED
+    !display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+
+    // LED er ON ved High
+    digitalWrite(LED_PIN, HIGH);
+    Serial.println("State: ON");
+
+    // ISR ved joystick tryk
+    attachInterrupt(digitalPinToInterrupt(JOY_BTN_PIN), handleJoystickPress, FALLING);
+
+    // Viser state på LED i  .96 OLED
+    updateDisplay();
+}
+
+void loop() {
+    unsigned long currentTime = millis();
+
+    if (buttonPressedFlag) {
+        buttonPressedFlag = false;
+
+        if (currentTime - lastPressTime > DEBOUNCE_DELAY) {
+            lastPressTime = currentTime;
+
+            if (state == ON) {
+                state = BLINKING;
+                lastBlinkTime = currentTime;
+                Serial.println("State: BLINKING");
+            } 
+            else if (state == BLINKING) {
+                state = OFF;
+                digitalWrite(LED_PIN, LOW);
+                Serial.println("State: OFF");
+            } 
+            else if (state == OFF) {
+                state = ON;
+                digitalWrite(LED_PIN, HIGH);
+                Serial.println("State: ON");
+            }
+
+            updateDisplay();
+        }
+    }
+
+    if (state == BLINKING) {
+        if (currentTime - lastBlinkTime >= BLINK_INTERVAL) {
+            ledState = !ledState;
+            digitalWrite(LED_PIN, ledState);
+            lastBlinkTime = currentTime;
+        }
+    }
+}
+
+// Interrupt Service Routine (ISR)
+void handleJoystickPress() {
+    buttonPressedFlag = true;
+    Serial.println("Joystick Press Detected!");
+}
+
+void updateDisplay() {
+    display.clearDisplay(); 
+
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(10, 20);
+
+    if (state == ON) {
+        display.println("LED: ON");
+    } else if (state == BLINKING) {
+        display.println("BLINKING");
+    } else {
+        display.println("LED: OFF");
+    }
+
+    display.display();
+}
